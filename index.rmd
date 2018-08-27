@@ -1,0 +1,78 @@
+---
+title: "Machine Learning Final Project"
+author: "Jordan Mantha"
+date: "8/25/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(dplyr)
+library(parallel)
+library(doParallel)
+set.seed(4321)
+```
+
+## Loading and Preprocessing
+
+The training data and the data used for the testing quiz are loaded in. Since there are many columns that have mostly missing data, columns with greater than 75% NAs are removed from both data sets. Columns that are not relevant (timestamps, etc.) are also removed. We are left with 52 predictors in addition to the classe outcome column.
+
+```{r cache=TRUE}
+trainingData <- read.csv("pml-training.csv", na.strings = c("NA", ""))
+quiz <- read.csv("pml-testing.csv")
+
+bad <- c()
+for(i in names(trainingData)) {
+        nas <- sum(is.na(trainingData[[i]]))
+        if ( nas != 0) {
+                bad <- c(bad, i)
+        }
+}
+trainingData <- trainingData %>% select(-(X:num_window),-bad)
+quiz <- quiz %>% select(-(X:num_window),-bad)
+
+inTrain <- createDataPartition(trainingData$classe, p = 0.7, list = FALSE)
+training <- trainingData[inTrain, ]
+testing <- trainingData[-inTrain, ]
+dim(training)
+dim(testing)
+```
+
+## Training
+
+The random forest method is used with a 5-fold "cv" cross-validation method.
+
+```{r cache=TRUE}
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+trControl <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+modFit <- train(classe ~ ., method = "rf", trControl = trControl, data = training)
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+## Results
+
+The results from the model fit are given below:
+```{r echo=TRUE}
+print(modFit)
+plot(modFit)
+```
+The out-of-bag estimate of error is 0.75%
+
+To assess the accuracy we look at the confusion matrix on predictions of the testing portion of the training data with the real classe variable in the testing data.
+
+```{r}
+modFitPred <- predict(modFit, training)
+modFitCM <- confusionMatrix(modFitPred,training$classe)
+print(modFitCM)
+ac <- modFitCM$overall["Accuracy"]
+```
+
+The accuracy of the prediction is `r paste0(round(ac * 100, 2), "%")`.
+
+Lastly, we predict the values of the testing data for the quiz:
+```{r}
+predict(modFit, quiz)
+```
